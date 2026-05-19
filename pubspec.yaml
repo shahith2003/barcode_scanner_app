@@ -1,0 +1,46 @@
+name: barcode_scanner_app
+description: A beginner-friendly Flutter barcode and QR code scanner app.
+
+# Flutter version constraint
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # ─── Core Scanner Package ───────────────────────────────────────────────────
+  # mobile_scanner: handles camera access + barcode/QR detection
+  # Works on Android and iOS. Uses ML Kit under the hood.
+  mobile_scanner: ^5.2.3
+
+  # ─── Permissions Package ────────────────────────────────────────────────────
+  # permission_handler: lets us ask for camera permission at runtime
+  permission_handler: ^11.3.1
+
+  # ─── Haptic Feedback (vibration on scan) ────────────────────────────────────
+  # vibration: makes the phone vibrate when a barcode is found
+  vibration: ^2.0.0
+
+  # ─── Clipboard (copy scanned text) ──────────────────────────────────────────
+  # Built into Flutter — no extra package needed (Clipboard class)
+
+  # Default Flutter icons
+  cupertino_icons: ^1.0.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+  flutter_launcher_icons: ^0.13.1 # Check for the latest version on pub.dev
+
+flutter_launcher_icons:
+  android: "launcher_icon"
+  image_path: "assets/images/Barcode_app_logo_1.png"
+
+flutter:
+  uses-material-design: false

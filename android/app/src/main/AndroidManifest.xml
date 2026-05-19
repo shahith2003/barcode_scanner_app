@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  AndroidManifest.xml
+  ─────────────────────────────────────────────────────────────────────────────
+  This file tells Android:
+    • What permissions the app needs (camera)
+    • Basic app settings (name, icon, theme)
+  ─────────────────────────────────────────────────────────────────────────────
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+      CAMERA PERMISSION
+      ─────────────────
+      We need this so our app can open the camera to scan barcodes.
+      Android will show a popup asking the user to allow camera access.
+    -->
+    <uses-permission android:name="android.permission.CAMERA" />
+
+    <!--
+      VIBRATE PERMISSION
+      ──────────────────
+      Allows the phone to vibrate when a barcode is successfully scanned.
+      This gives the user haptic feedback.
+    -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+
+    <!--
+      CAMERA FEATURE
+      ──────────────
+      Declares that this app uses the camera.
+      required="false" means the app can still install on devices without a camera
+      (it just won't be able to scan).
+    -->
+    <uses-feature
+        android:name="android.hardware.camera"
+        android:required="false" />
+
+    <application
+        android:label="Barcode Scanner"
+        android:name="${applicationName}"
+        android:icon="@mipmap/launcher_icon"
+        android:enableOnBackInvokedCallback="true">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:taskAffinity=""
+            android:theme="@style/LaunchTheme"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:hardwareAccelerated="true"
+            android:windowSoftInputMode="adjustResize">
+
+            <!-- Tells Android this is the screen to open when app launches -->
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity>
+
+        <!-- Required for Flutter to properly render UI -->
+        <meta-data
+            android:name="flutterEmbedding"
+            android:value="2" />
+    </application>
+
+    <!--
+      QUERIES block — required for Android 11+ (API 30+)
+      Allows our app to check for other apps if needed.
+    -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.PROCESS_TEXT"/>
+            <data android:mimeType="text/plain"/>
+        </intent>
+    </queries>
+
+</manifest>
