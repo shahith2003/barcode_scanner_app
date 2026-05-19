@@ -43,4 +43,4 @@ flutter_launcher_icons:
   image_path: "assets/images/Barcode_app_logo_1.png"
 
 flutter:
-  uses-material-design: true
+  uses-material-design: false
