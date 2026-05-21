@@ -1,10 +1,10 @@
 // home_screen.dart
-// Physical button support for Urovo DT50S:
-//   - "onScanButtonPressed" → physical button was pressed → open camera scanner
-//   - "onBarcodeScanned"   → decode result received → show on screen directly
+// Now includes: HTTP POST to Flask API when a barcode is scanned
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http; // ← HTTP package for API calls
+import 'dart:convert'; // ← For jsonEncode / jsonDecode
 import 'scanner_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -18,9 +18,18 @@ class _HomeScreenState extends State<HomeScreen> {
   String? scannedResult;
   String? barcodeType;
   bool isLoading = false;
+  bool isSaving = false; // True while sending to Flask API
+  String? saveStatus;    // "saved" | "error" | null — shown below result
+
   final List<Map<String, String>> scanHistory = [];
 
-  // MethodChannel — must match MainActivity.kt exactly
+  // ── Flask API URL ──────────────────────────────────────────────────────
+  // Replace 192.168.1.105 with YOUR computer's actual IPv4 address.
+  // Run "ipconfig" in Command Prompt to find it.
+  // Port 5000 is where Flask runs by default.
+  static const String _apiUrl = 'http://172.16.2.236:5000/save-barcode';
+
+  // ── MethodChannel — talks to MainActivity.kt ───────────────────────────
   static const _scannerChannel = MethodChannel(
     'com.example.barcode_scanner_app/scanner',
   );
@@ -31,42 +40,32 @@ class _HomeScreenState extends State<HomeScreen> {
     _setupChannel();
   }
 
-  // ── _setupChannel() ────────────────────────────────────────────────────
-  // Listens for two events from Android:
-  //   1. "onScanButtonPressed" → physical button pressed → open camera
-  //   2. "onBarcodeScanned"   → decode result from device laser → show result
+  // ── _setupChannel() ───────────────────────────────────────────────────
   void _setupChannel() {
     _scannerChannel.setMethodCallHandler((MethodCall call) async {
       switch (call.method) {
-
-      // Physical scan button was pressed
-      // → open the camera-based scanner (same as tapping the on-screen button)
         case 'onScanButtonPressed':
-          if (!isLoading && mounted) {
-            openScanner();
-          }
+          if (!isLoading && mounted) openScanner();
           break;
-
-      // The DT50S laser already scanned a barcode and is giving us the result
-      // → show it directly on screen without opening the camera
         case 'onBarcodeScanned':
           final String value = call.arguments as String;
-          if (mounted) {
-            _handleResult(value, 'Hardware Scanner');
-          }
+          if (mounted) _handleResult(value, 'Hardware Scanner');
           break;
       }
     });
   }
 
-  // ── _handleResult() ──────────────────────────────────────────────────
-  // Shared handler — called by both hardware scan and camera scan.
+  // ── _handleResult() ───────────────────────────────────────────────────
+  // Called after every successful scan (hardware or camera).
+  // Shows the result on screen then immediately saves to SQL Server via Flask.
   void _handleResult(String value, String type) {
     if (value.isEmpty) return;
+
     setState(() {
       scannedResult = value;
       barcodeType = type;
       isLoading = false;
+      saveStatus = null; // reset status from previous scan
 
       scanHistory.insert(0, {
         'value': value,
@@ -75,11 +74,55 @@ class _HomeScreenState extends State<HomeScreen> {
       });
       if (scanHistory.length > 5) scanHistory.removeLast();
     });
+
+    // Save to SQL Server via Flask immediately after scan
+    _saveToDatabase(value);
+  }
+
+  // ── _saveToDatabase() ─────────────────────────────────────────────────
+  // Sends the scanned barcode to the Flask API via HTTP POST.
+  // Flask then inserts it into SQL Server.
+  //
+  // Flow:
+  //   Flutter → POST /save-barcode → Flask (Python) → SQL Server
+  Future<void> _saveToDatabase(String barcode) async {
+    setState(() => isSaving = true);
+
+    try {
+      // http.post() sends an HTTP POST request to the Flask server
+      final response = await http.post(
+        Uri.parse(_apiUrl),
+
+        // Tell Flask we are sending JSON data
+        headers: {'Content-Type': 'application/json'},
+
+        // jsonEncode converts the Dart Map into a JSON string:
+        // {'barcode': '12345678'} → '{"barcode":"12345678"}'
+        body: jsonEncode({'barcode': barcode}),
+      ).timeout(
+        // If no response in 10 seconds, throw a timeout error
+        const Duration(seconds: 10),
+        onTimeout: () => throw Exception('Request timed out'),
+      );
+
+      if (response.statusCode == 200) {
+        // ✅ Flask returned 200 OK — barcode was saved to SQL Server
+        setState(() => saveStatus = 'saved');
+      } else {
+        // Flask returned an error status code
+        setState(() => saveStatus = 'error');
+        debugPrint('Server error: ${response.statusCode} ${response.body}');
+      }
+    } catch (e) {
+      // Network error, timeout, or Flask not running
+      setState(() => saveStatus = 'error');
+      debugPrint('Save failed: $e');
+    } finally {
+      setState(() => isSaving = false);
+    }
   }
 
   // ── openScanner() ─────────────────────────────────────────────────────
-  // Opens the camera-based scanner screen.
-  // Called by both on-screen button tap and physical button press.
   Future<void> openScanner() async {
     setState(() => isLoading = true);
 
@@ -99,6 +142,7 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() {
       scannedResult = null;
       barcodeType = null;
+      saveStatus = null;
     });
   }
 
@@ -188,6 +232,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        // ── Scanned Value Card ────────────────────────────────────────
         Card(
           elevation: 4,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -223,7 +268,58 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
         ),
-        const SizedBox(height: 16),
+
+        const SizedBox(height: 10),
+
+        // ── Database Save Status ──────────────────────────────────────
+        // Shows a small indicator: saving spinner, saved ✅, or error ❌
+        if (isSaving)
+          const Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              SizedBox(
+                width: 14, height: 14,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+              SizedBox(width: 8),
+              Text('Saving to database...',
+                  style: TextStyle(fontSize: 12, color: Colors.grey)),
+            ],
+          )
+        else if (saveStatus == 'saved')
+          const Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.cloud_done, color: Colors.green, size: 16),
+              SizedBox(width: 6),
+              Text('Saved to SQL Server',
+                  style: TextStyle(fontSize: 12, color: Colors.green)),
+            ],
+          )
+        else if (saveStatus == 'error')
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.cloud_off, color: Colors.red, size: 16),
+                const SizedBox(width: 6),
+                const Text('Could not save to database ❌',
+                    style: TextStyle(fontSize: 12, color: Colors.red)),
+                const SizedBox(width: 8),
+                // Retry button — tries to save again without rescanning
+                GestureDetector(
+                  onTap: () => _saveToDatabase(scannedResult!),
+                  child: const Text('Retry',
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.indigo,
+                          decoration: TextDecoration.underline)),
+                ),
+              ],
+            ),
+
+        const SizedBox(height: 12),
+
+        // ── Action Buttons ────────────────────────────────────────────
         OutlinedButton.icon(
           onPressed: copyToClipboard,
           icon: const Icon(Icons.copy),
@@ -243,8 +339,8 @@ class _HomeScreenState extends State<HomeScreen> {
             backgroundColor: Colors.indigo,
             foregroundColor: Colors.white,
             padding: const EdgeInsets.symmetric(vertical: 14),
-            shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12)),
           ),
         ),
       ],
@@ -281,8 +377,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(fontSize: 14)),
                 subtitle: Text('${item['type']} • ${item['time']}',
-                    style:
-                    const TextStyle(fontSize: 12, color: Colors.grey)),
+                    style: const TextStyle(fontSize: 12, color: Colors.grey)),
                 onTap: () {
                   Clipboard.setData(
                       ClipboardData(text: item['value'] ?? ''));

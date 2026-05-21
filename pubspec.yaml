@@ -17,6 +17,7 @@ dependencies:
   # mobile_scanner: handles camera access + barcode/QR detection
   # Works on Android and iOS. Uses ML Kit under the hood.
   mobile_scanner: ^5.2.3
+  http: ^1.2.1
 
   # ─── Permissions Package ────────────────────────────────────────────────────
   # permission_handler: lets us ask for camera permission at runtime
